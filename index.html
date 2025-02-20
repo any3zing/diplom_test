@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream</title>
+</head>
+<body>
+    <h1>Stream</h1>
+    <img id="stream" src="" alt="Stream" width="640">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.js"></script>
+    <script>
+        const socket = io("http://localhost:3000");
+        const img = document.getElementById("stream");
+
+        socket.on("image", (data) => {
+            img.src = "data:image/jpeg;base64," + data;
+        });
+
+        socket.on("connect", () => console.log("Connected to server"));
+    </script>
+</body>
+</html>
