@@ -4,18 +4,72 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stream</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        #stream {
+            border: 5px solid #ddd;
+            border-radius: 10px;
+            max-width: 100%;
+            height: auto;
+        }
+        .detections {
+            margin-top: 20px;
+            text-align: left;
+        }
+        .detection {
+            background-color: #f9f9f9;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+    </style>
 </head>
 <body>
-    <h1>Stream</h1>
-    <img id="stream" src="" alt="Stream" width="640">
+    <div class="container">
+        <h1>Stream</h1>
+        <img id="stream" src="" alt="Stream" width="640">
+        <div class="detections" id="detections"></div>
+    </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.js"></script>
     <script>
         const socket = io("http://localhost:3000");
         const img = document.getElementById("stream");
+        const detectionsDiv = document.getElementById("detections");
 
         socket.on("image", (data) => {
-            img.src = "data:image/jpeg;base64," + data;
+            img.src = "data:image/jpeg;base64," + data.image;
+
+            // Очищаем предыдущие детекты
+            detectionsDiv.innerHTML = "";
+
+            // Добавляем информацию о новых детектах
+            data.detections.forEach(detection => {
+                const detectionDiv = document.createElement("div");
+                detectionDiv.className = "detection";
+                detectionDiv.innerHTML = `
+                    <strong>Class:</strong> ${detection.class}<br>
+                    <strong>Confidence:</strong> ${detection.confidence.toFixed(2)}<br>
+                    <strong>Box:</strong> (x: ${detection.box.x}, y: ${detection.box.y}, width: ${detection.box.width}, height: ${detection.box.height})
+                `;
+                detectionsDiv.appendChild(detectionDiv);
+            });
         });
 
         socket.on("connect", () => console.log("Connected to server"));

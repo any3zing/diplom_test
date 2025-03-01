@@ -13,6 +13,8 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <curl/curl.h>
+#include <nlohmann/json.hpp>  // Библиотека для работы с JSON
+using json = nlohmann::json;
 
 #define PORT 3000
 
@@ -112,8 +114,8 @@ const std::vector<cv::Scalar> colors = {cv::Scalar(255, 255, 0), cv::Scalar(0, 2
 const float INPUT_WIDTH = 640.0;
 const float INPUT_HEIGHT = 640.0;
 const float SCORE_THRESHOLD = 0.001;
-const float NMS_THRESHOLD = 0.001;
-const float CONFIDENCE_THRESHOLD = 0.001;
+const float NMS_THRESHOLD = 0.45;
+const float CONFIDENCE_THRESHOLD = 0.2;
 struct Detection
 {
     int class_id;
@@ -154,6 +156,67 @@ void save_to_mongo(const std::string& class_name, float confidence, const std::s
     // Вставляем документ в MongoDB
     collection.insert_one(document.view());
     //std::cout << "Saved to MongoDB: " << bsoncxx::to_json(document.view()) << std::endl;
+}
+
+
+
+void send_image_and_detections(const cv::Mat& image, const std::vector<Detection>& detections, const std::vector<std::string>& class_names) {
+    if (image.empty()) {
+        std::cerr << "Empty image\n";
+        return;
+    }
+
+    // Кодируем изображение в base64
+    std::vector<uchar> buffer;
+    if (!cv::imencode(".jpg", image, buffer)) {
+        std::cerr << "Failed to encode image\n";
+        return;
+    }
+    std::string base64_data = base64_encode(buffer);
+
+    // Создаем JSON с изображением и данными о детектах
+    json j;
+    j["image"] = base64_data;
+
+    json detections_array = json::array();
+    for (const auto& detection : detections) {
+        json detection_json;
+        detection_json["class"] = class_names[detection.class_id];
+        detection_json["confidence"] = detection.confidence;
+        detection_json["box"] = {
+            {"x", detection.box.x},
+            {"y", detection.box.y},
+            {"width", detection.box.width},
+            {"height", detection.box.height}
+        };
+        detections_array.push_back(detection_json);
+    }
+    j["detections"] = detections_array;
+
+    // Преобразуем JSON в строку
+    std::string json_data = j.dump();
+
+    // Отправляем данные на сервер через HTTP POST
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        std::cerr << "Failed to initialize CURL\n";
+        return;
+    }
+
+    struct curl_slist* headers = nullptr;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+
+    curl_easy_setopt(curl, CURLOPT_URL, "http://localhost:3000/upload");
+    curl_easy_setopt(curl, CURLOPT_POST, 1);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+    CURLcode res = curl_easy_perform(curl);
+    if (res != CURLE_OK) {
+        std::cerr << "CURL failed: " << curl_easy_strerror(res) << "\n";
+    }
+
+    curl_easy_cleanup(curl);
 }
 
 void detect(cv::Mat &image, cv::dnn::Net &net, std::vector<Detection> &output, const std::vector<std::string> &className) {
@@ -224,45 +287,10 @@ void detect(cv::Mat &image, cv::dnn::Net &net, std::vector<Detection> &output, c
         save_to_mongo(className[result.class_id], result.confidence, current_time, result.box);
     }
         
+
     
 }
 
-void send_image(const cv::Mat& image) {
-    if (image.empty()) {
-        std::cerr << "Empty image\n";
-        return;
-    }
-
-    std::vector<uchar> buffer;
-    if (!cv::imencode(".jpg", image, buffer)) {
-        std::cerr << "Failed to encode image\n";
-        return;
-    }
-
-    std::string base64_data = base64_encode(buffer);
-
-    CURL *curl = curl_easy_init();
-    if (!curl) {
-        std::cerr << "Failed to initialize CURL\n";
-        return;
-    }
-
-    std::string json_data = "{\"image\": \"" + base64_data + "\"}";
-    struct curl_slist *headers = nullptr;
-    headers = curl_slist_append(headers, "Content-Type: application/json");
-
-    curl_easy_setopt(curl, CURLOPT_URL, "http://localhost:3000/upload");
-    curl_easy_setopt(curl, CURLOPT_POST, 1);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data.c_str());
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-
-    CURLcode res = curl_easy_perform(curl);
-    if (res != CURLE_OK) {
-        std::cerr << "CURL failed: " << curl_easy_strerror(res) << "\n";
-    }
-
-    curl_easy_cleanup(curl);
-}
 
 
 int main(int argc, char **argv)
@@ -359,7 +387,7 @@ int main(int argc, char **argv)
         }
 
         cv::imshow("output", frame);
-        send_image(frame);
+        send_image_and_detections(frame, output, class_list);
 
         if (cv::waitKey(1) != -1)
         {

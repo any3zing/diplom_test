@@ -2,6 +2,7 @@ from flask import Flask, request, send_from_directory
 from flask_socketio import SocketIO
 import base64
 import os
+import json  # Импортируем библиотеку для работы с JSON
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
@@ -15,12 +16,21 @@ def index():
 
 @app.route("/upload", methods=["POST"])
 def upload():
-    data = request.json.get("image")
-    if not data:
-        return {"error": "No image data"}, 400
+    try:
+        # Читаем JSON-данные из запроса
+        data = request.json
 
-    socketio.emit("image", data)  # Рассылаем изображение клиентам
-    return {"status": "ok"}
+        image = data.get("image")
+        detections = data.get("detections", [])
+
+        if not image:
+            return {"error": "No image data"}, 400
+
+        # Рассылаем изображение и данные о детектах клиентам
+        socketio.emit("image", {"image": image, "detections": detections})
+        return {"status": "ok"}
+    except Exception as e:
+        return {"error": str(e)}, 500
 
 @socketio.on("connect")
 def handle_connect():
