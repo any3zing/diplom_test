@@ -17,4 +17,4 @@ Moreover you can watch whats inside monngo by
 use yolo_database; 
 db.detections.find();`
 
-![Uploading Снимок экрана 2025-03-01 в 20.17.31.png…]()
+![alt text](https://github.com/any3zing/diplom_test/blob/12112e21796cb8119584f374f2a87ddbc895ae48/result.png)
