@@ -1,22 +1,19 @@
-Компиляция: (cmake не работает)
-"g++ -std=c++17 -O3 src/yolo_vid.cpp -o yolo_vid \
-    `pkg-config --cflags --libs opencv4 ` \
-    -I/usr/local/include/mongocxx/v_noabi \
-    -I/usr/local/include/bsoncxx/v_noabi \
-    -L/usr/local/lib \
-    -lmongocxx -lbsoncxx  \
--I/opt/homebrew/opt/curl/include -L/opt/homebrew/opt/curl/lib -lcurl \
--I/opt/homebrew/opt/nlohmann-json/include"
+`mkdir build
+cd build
+cmake ..
+make`
+
+before starting ./yolo_vid
+you should 
+1) run docker
+`docker start mongodb`
+3) run server 
+`python3 server.py`
 
 
-Старт докера:
-docker start mongodb
-./yolo_example_vid
+Moreover you can watch whats inside monngo by
 
-
-
-Вывод резов:
-docker exec -it mongoldb mongosh
+`docker exec -it mongoldb mongosh
 use yolo_database; 
-db.detections.find();
+db.detections.find();`
 
