@@ -1,3 +1,15 @@
+Make sure you have already on your system:
+
+Any modern UNIX OS (tested on Monterey 12.12.1)
+OpenCV 4.5.4+
+GCC 11.0+
+IMPORTANT!!! Note that OpenCV versions prior to 4.5.4 will not work at all.
+`git clone https://github.com/any3zing/diplom_test.git`
+`cd diplom_test`
+Upload your model file (.onnx) to config_files.
+
+*BUILD*
+
 `mkdir build
 cd build
 cmake ..
