@@ -1,8 +1,10 @@
 from flask import Flask, request, send_from_directory
 from flask_socketio import SocketIO
+from PIL import Image
+import io
 import base64
+import json
 import os
-import json  # Импортируем библиотеку для работы с JSON
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
@@ -14,20 +16,28 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 def index():
     return send_from_directory(".", "index.html")
 
-@app.route("/upload", methods=["POST"])
-def upload():
+@app.route("/upload_multipart", methods=["POST"])
+def upload_multipart():
     try:
-        # Читаем JSON-данные из запроса
-        data = request.json
+        if "image" not in request.files:
+            return {"error": "No image part"}, 400
+        if "detections" not in request.form:
+            return {"error": "No detections data"}, 400
 
-        image = data.get("image")
-        detections = data.get("detections", [])
+        image_file = request.files["image"]
+        detections_json = request.form["detections"]
+        detections = json.loads(detections_json)
 
-        if not image:
-            return {"error": "No image data"}, 400
+        # Преобразуем изображение в base64, чтобы отправить в сокет
+        image_bytes = image_file.read()
+        base64_image = base64.b64encode(image_bytes).decode("utf-8")
 
-        # Рассылаем изображение и данные о детектах клиентам
-        socketio.emit("image", {"image": image, "detections": detections})
+        # Отправка изображения и детекций клиентам
+        socketio.emit("image", {
+            "image": base64_image,
+            "detections": detections
+        })
+
         return {"status": "ok"}
     except Exception as e:
         return {"error": str(e)}, 500
