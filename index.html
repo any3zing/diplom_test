@@ -2,77 +2,65 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stream</title>
+    <title>Object Detection Monitor</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }
-        .container {
-            background-color: #fff;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-            text-align: center;
+        #image-container {
+            position: relative;
+            display: inline-block;
         }
         #stream {
-            border: 5px solid #ddd;
-            border-radius: 10px;
+            display: block;
             max-width: 100%;
-            height: auto;
         }
-        .detections {
-            margin-top: 20px;
-            text-align: left;
-        }
-        .detection {
-            background-color: #f9f9f9;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            margin-bottom: 10px;
+        .box {
+            position: absolute;
+            border: 2px solid red;
+            background: rgba(255, 255, 255, 0.6);
+            font-size: 12px;
+            padding: 2px;
+            color: black;
+            pointer-events: none;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Stream</h1>
-        <img id="stream" src="" alt="Stream" width="640">
-        <div class="detections" id="detections"></div>
+    <h1>Live Detection</h1>
+    <div id="image-container">
+        <img id="stream" src="" width="640">
+        <div id="boxes"></div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script>
-        const socket = io("http://localhost:3000");
-        const img = document.getElementById("stream");
-        const detectionsDiv = document.getElementById("detections");
+        const socket = io();
+        const image = document.getElementById("stream");
+        const boxesContainer = document.getElementById("boxes");
 
-        socket.on("image", (data) => {
-            img.src = "data:image/jpeg;base64," + data.image;
+        socket.on("image", data => {
+            // Показываем изображение
+            image.src = "data:image/jpeg;base64," + data.image;
 
-            // Очищаем предыдущие детекты
-            detectionsDiv.innerHTML = "";
+            // Когда изображение загрузилось — отрисовываем боксы
+            image.onload = () => {
+                boxesContainer.innerHTML = "";
 
-            // Добавляем информацию о новых детектах
-            data.detections.forEach(detection => {
-                const detectionDiv = document.createElement("div");
-                detectionDiv.className = "detection";
-                detectionDiv.innerHTML = `
-                    <strong>Class:</strong> ${detection.class}<br>
-                    <strong>Confidence:</strong> ${detection.confidence.toFixed(2)}<br>
-                    <strong>Box:</strong> (x: ${detection.box.x}, y: ${detection.box.y}, width: ${detection.box.width}, height: ${detection.box.height})
-                `;
-                detectionsDiv.appendChild(detectionDiv);
-            });
+                const scaleX = image.clientWidth / image.naturalWidth;
+                const scaleY = image.clientHeight / image.naturalHeight;
+
+                data.detections.forEach(det => {
+                    const box = document.createElement("div");
+                    box.className = "box";
+
+                    box.style.left = (det.box.x * scaleX) + "px";
+                    box.style.top = (det.box.y * scaleY) + "px";
+                    box.style.width = (det.box.width * scaleX) + "px";
+                    box.style.height = (det.box.height * scaleY) + "px";
+
+                    box.innerText = `${det.class} (${Math.round(det.confidence * 100)}%)`;
+                    boxesContainer.appendChild(box);
+                });
+            };
         });
-
-        socket.on("connect", () => console.log("Connected to server"));
     </script>
 </body>
 </html>
