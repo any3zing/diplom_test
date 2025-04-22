@@ -5,67 +5,13 @@
 #include <bsoncxx/json.hpp>
 #include <bsoncxx/builder/stream/document.hpp>
 #include <opencv2/opencv.hpp>
-#include <chrono>
 #include <ctime>
-#include <iomanip>
-#include <sstream>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <unistd.h>
 #include <curl/curl.h>
-#include <nlohmann/json.hpp>  // Библиотека для работы с JSON
+#include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
 #define PORT 3000
 
-static const std::string base64_chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    "abcdefghijklmnopqrstuvwxyz"
-    "0123456789+/";
-
-std::string base64_encode(const std::vector<uchar>& data) {
-    std::string ret;
-    int i = 0;
-    int j = 0;
-    uint8_t char_array_3[3];
-    uint8_t char_array_4[4];
-
-    for (const auto& byte : data) {
-        char_array_3[i++] = byte;
-        if (i == 3) {
-            char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
-            char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
-            char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
-            char_array_4[3] = char_array_3[2] & 0x3f;
-
-            for (i = 0; i < 4; i++) {
-                ret += base64_chars[char_array_4[i]];
-            }
-            i = 0;
-        }
-    }
-
-    if (i) {
-        for (j = i; j < 3; j++) {
-            char_array_3[j] = '\0';
-        }
-
-        char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
-        char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
-        char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
-        char_array_4[3] = char_array_3[2] & 0x3f;
-
-        for (j = 0; j < i + 1; j++) {
-            ret += base64_chars[char_array_4[j]];
-        }
-
-        while (i++ < 3) {
-            ret += '=';
-        }
-    }
-
-    return ret;
-}
 
 std::string get_current_time() {
     auto now = std::chrono::system_clock::now();
@@ -109,6 +55,9 @@ void load_net(cv::dnn::Net &net, bool is_cuda)
     net = result;
 }
 
+
+
+
 const std::vector<cv::Scalar> colors = {cv::Scalar(255, 255, 0), cv::Scalar(0, 255, 0), cv::Scalar(0, 255, 255), cv::Scalar(255, 0, 0)};
 
 const float INPUT_WIDTH = 640.0;
@@ -122,61 +71,13 @@ struct Detection
     float confidence;
     cv::Rect box;
 };
-
-cv::Mat format_yolov5(const cv::Mat &source) {
-    int col = source.cols;
-    int row = source.rows;
-    int _max = MAX(col, row);
-    cv::Mat result = cv::Mat::zeros(_max, _max, CV_8UC3);
-    source.copyTo(result(cv::Rect(0, 0, col, row)));
-    return result;
-}
-void save_to_mongo(const std::string& class_name, float confidence, const std::string& timestamp, const cv::Rect& box) {
-    static mongocxx::instance instance{}; // Один раз создаём MongoDB instance
-    mongocxx::uri uri("mongodb://localhost:27017"); // Подключаемся к локальной MongoDB
-    mongocxx::client client(uri);
-
-    auto db = client["yolo_database"];    // Имя базы данных
-    auto collection = db["detections"];  // Имя коллекции
-    
-    // Создаём BSON-документ
-    bsoncxx::builder::stream::document document{};
-    document << "class" << class_name
-             << "confidence" << confidence
-             << "timestamp" << timestamp
-             << "box" << bsoncxx::builder::stream::open_document
-             << "x" << box.x
-             << "y" << box.y
-             << "width" << box.width
-             << "height" << box.height
-            
-             << bsoncxx::builder::stream::close_document;
-
-
-    // Вставляем документ в MongoDB
-    collection.insert_one(document.view());
-    //std::cout << "Saved to MongoDB: " << bsoncxx::to_json(document.view()) << std::endl;
-}
-
-
-
-void send_image_and_detections(const cv::Mat& image, const std::vector<Detection>& detections, const std::vector<std::string>& class_names) {
-    if (image.empty()) {
-        std::cerr << "Empty image\n";
-        return;
-    }
-
-    // Кодируем изображение в base64
-    std::vector<uchar> buffer;
-    if (!cv::imencode(".jpg", image, buffer)) {
-        std::cerr << "Failed to encode image\n";
-        return;
-    }
-    std::string base64_data = base64_encode(buffer);
-
-    // Создаем JSON с изображением и данными о детектах
+json create_detection_json(const cv::Mat& image, const std::vector<Detection>& detections, const std::vector<std::string>& class_names) {
     json j;
-    j["image"] = base64_data;
+
+    // Получаем текущее время
+    std::string timestamp = get_current_time();
+    j["timestamp"] = timestamp;
+
 
     json detections_array = json::array();
     for (const auto& detection : detections) {
@@ -191,33 +92,85 @@ void send_image_and_detections(const cv::Mat& image, const std::vector<Detection
         };
         detections_array.push_back(detection_json);
     }
+
     j["detections"] = detections_array;
+    return j;
+}
 
-    // Преобразуем JSON в строку
-    std::string json_data = j.dump();
+cv::Mat format_yolov5(const cv::Mat &source) {
+    int col = source.cols;
+    int row = source.rows;
+    int _max = MAX(col, row);
+    cv::Mat result = cv::Mat::zeros(_max, _max, CV_8UC3);
+    source.copyTo(result(cv::Rect(0, 0, col, row)));
+    return result;
+}
 
-    // Отправляем данные на сервер через HTTP POST
+void save_to_mongo(const json& j) {
+    static mongocxx::instance instance{}; // Один раз создаём MongoDB instance
+    mongocxx::uri uri("mongodb://localhost:27017"); // Подключаемся к локальной MongoDB
+    mongocxx::client client(uri);
+
+    auto db = client["yolo_database"];    // Имя базы данных
+    auto collection = db["detections"];  // Имя коллекции
+    
+    try {
+        auto bson_doc = bsoncxx::from_json(j.dump());
+        collection.insert_one(bson_doc.view());
+    } catch (const std::exception& e) {
+        std::cerr << "Mongo insert error: " << e.what() << std::endl;
+    }
+}
+
+
+
+void send_image_and_detections(const cv::Mat& image, const std::vector<Detection>& detections, const std::vector<std::string>& class_names) {
+    if (image.empty()) {
+        std::cerr << "Empty image\n";
+        return;
+    }
+    // Сохраняем JPEG во временный файл
+    std::vector<uchar> buffer;
+    cv::imencode(".jpg", image, buffer);
+    std::string filename = "temp.jpg";
+    std::ofstream ofs(filename, std::ios::binary);
+    ofs.write(reinterpret_cast<const char*>(buffer.data()), buffer.size());
+    ofs.close();
+
+    // Получаем JSON
+    json j = create_detection_json(image, detections, class_names);
+
+    // Отправляем через multipart/form-data
     CURL* curl = curl_easy_init();
     if (!curl) {
-        std::cerr << "Failed to initialize CURL\n";
+        std::cerr << "Failed to init curl\n";
         return;
     }
 
-    struct curl_slist* headers = nullptr;
-    headers = curl_slist_append(headers, "Content-Type: application/json");
+    curl_mime* mime = curl_mime_init(curl);
 
-    curl_easy_setopt(curl, CURLOPT_URL, "http://localhost:3000/upload");
-    curl_easy_setopt(curl, CURLOPT_POST, 1);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data.c_str());
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_mimepart* part = curl_mime_addpart(mime);
+    curl_mime_name(part, "image");
+    curl_mime_filedata(part, filename.c_str());
+
+    part = curl_mime_addpart(mime);
+    curl_mime_name(part, "detections");
+    std::string json_str = j.dump();
+    curl_mime_data(part, json_str.c_str(), CURL_ZERO_TERMINATED);
+
+    curl_easy_setopt(curl, CURLOPT_URL, "http://localhost:3000/upload_multipart");
+    curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
 
     CURLcode res = curl_easy_perform(curl);
     if (res != CURLE_OK) {
-        std::cerr << "CURL failed: " << curl_easy_strerror(res) << "\n";
+        std::cerr << "CURL error: " << curl_easy_strerror(res) << "\n";
     }
 
+    curl_mime_free(mime);
     curl_easy_cleanup(curl);
+    std::remove(filename.c_str());
 }
+
 
 void detect(cv::Mat &image, cv::dnn::Net &net, std::vector<Detection> &output, const std::vector<std::string> &className) {
     cv::Mat blob;
@@ -283,37 +236,13 @@ void detect(cv::Mat &image, cv::dnn::Net &net, std::vector<Detection> &output, c
         result.confidence = confidences[idx];
         result.box = boxes[idx];
         output.push_back(result);
-        std::string current_time = get_current_time();
-        save_to_mongo(className[result.class_id], result.confidence, current_time, result.box);
     }
-        
-
-    
 }
 
 
 
 int main(int argc, char **argv)
 {
-    int sock = 0;
-    struct sockaddr_in serv_addr;
-    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        std::cerr << "Socket creation error" << std::endl;
-        return -1;
-    }
-
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(PORT);
-
-    if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
-        std::cerr << "Invalid address/ Address not supported" << std::endl;
-        return -1;
-    }
-
-    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        std::cerr << "Connection Failed" << std::endl;
-        return -1;
-    }
 
     std::vector<std::string> class_list = load_class_list();
 
@@ -347,6 +276,9 @@ int main(int argc, char **argv)
         std::vector<Detection> output;
         detect(frame, net, output, class_list);
 
+
+        json detection_json = create_detection_json(frame, output, class_list);
+        save_to_mongo(detection_json);
         frame_count++;
         total_frames++;
 
@@ -363,6 +295,7 @@ int main(int argc, char **argv)
 
             cv::rectangle(frame, cv::Point(box.x, box.y - 20), cv::Point(box.x + box.width, box.y), color, cv::FILLED);
             cv::putText(frame, class_list[classId].c_str(), cv::Point(box.x, box.y - 5), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0));
+            std::cout << "Detection " << i << ": Class " << detection.class_id << ", Confidence " << detection.confidence << std::endl;
         }
 
         if (frame_count >= 30)
@@ -397,7 +330,7 @@ int main(int argc, char **argv)
             break;
         }
     }
-    close(sock);
+
     std::cout << "Total frames: " << total_frames << "\n";
 
     return 0;
