@@ -52,7 +52,7 @@ void load_net(cv::dnn::Net &net, bool is_cuda)
         result.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
         result.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
     }
-    net = result;
+    net = result; 
 }
 
 
@@ -63,8 +63,8 @@ const std::vector<cv::Scalar> colors = {cv::Scalar(255, 255, 0), cv::Scalar(0, 2
 const float INPUT_WIDTH = 640.0;
 const float INPUT_HEIGHT = 640.0;
 const float SCORE_THRESHOLD = 0.001;
-const float NMS_THRESHOLD = 0.45;
-const float CONFIDENCE_THRESHOLD = 0.2;
+const float NMS_THRESHOLD = 0.001;
+const float CONFIDENCE_THRESHOLD = 0.01;
 struct Detection
 {
     int class_id;
@@ -73,29 +73,24 @@ struct Detection
 };
 json create_detection_json(const cv::Mat& image, const std::vector<Detection>& detections, const std::vector<std::string>& class_names) {
     json j;
-
-    // Получаем текущее время
     std::string timestamp = get_current_time();
     j["timestamp"] = timestamp;
 
-
-    json detections_array = json::array();
-    for (const auto& detection : detections) {
-        json detection_json;
-        detection_json["class"] = class_names[detection.class_id];
-        detection_json["confidence"] = detection.confidence;
-        detection_json["box"] = {
+    if (!detections.empty()) {
+        const auto& detection = detections[0];
+        j["class"] = class_names[detection.class_id];
+        j["confidence"] = detection.confidence;
+        j["box"] = {
             {"x", detection.box.x},
             {"y", detection.box.y},
             {"width", detection.box.width},
             {"height", detection.box.height}
         };
-        detections_array.push_back(detection_json);
     }
 
-    j["detections"] = detections_array;
     return j;
 }
+
 
 cv::Mat format_yolov5(const cv::Mat &source) {
     int col = source.cols;
@@ -124,7 +119,7 @@ void save_to_mongo(const json& j) {
 
 
 
-void send_image_and_detections(const cv::Mat& image, const std::vector<Detection>& detections, const std::vector<std::string>& class_names) {
+void send_image_and_detections(const cv::Mat& image, const json& j) {
     if (image.empty()) {
         std::cerr << "Empty image\n";
         return;
@@ -136,9 +131,6 @@ void send_image_and_detections(const cv::Mat& image, const std::vector<Detection
     std::ofstream ofs(filename, std::ios::binary);
     ofs.write(reinterpret_cast<const char*>(buffer.data()), buffer.size());
     ofs.close();
-
-    // Получаем JSON
-    json j = create_detection_json(image, detections, class_names);
 
     // Отправляем через multipart/form-data
     CURL* curl = curl_easy_init();
@@ -276,9 +268,6 @@ int main(int argc, char **argv)
         std::vector<Detection> output;
         detect(frame, net, output, class_list);
 
-
-        json detection_json = create_detection_json(frame, output, class_list);
-        save_to_mongo(detection_json);
         frame_count++;
         total_frames++;
 
@@ -320,7 +309,12 @@ int main(int argc, char **argv)
         }
 
         cv::imshow("output", frame);
-        send_image_and_detections(frame, output, class_list);
+        json detection_json = create_detection_json(frame, output, class_list);
+        send_image_and_detections(frame, detection_json);
+        
+        if (detections != 0) {
+            save_to_mongo(detection_json);
+        }
 
         if (cv::waitKey(1) != -1)
         {

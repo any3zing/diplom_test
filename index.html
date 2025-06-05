@@ -2,32 +2,73 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Object Detection Monitor</title>
+    <title>Stream</title>
     <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+            display: flex;
+            justify-content: center;
+            padding-top: 40px;
+        }
+
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 720px;
+            width: 100%;
+        }
+
         #image-container {
             position: relative;
             display: inline-block;
+            margin-bottom: 15px;
         }
+
         #stream {
             display: block;
+            border-radius: 8px;
             max-width: 100%;
         }
+
         .box {
             position: absolute;
-            border: 2px solid red;
-            background: rgba(255, 255, 255, 0.6);
             font-size: 12px;
             padding: 2px;
             color: black;
             pointer-events: none;
         }
+
+        .info {
+            text-align: left;
+            background: #fafafa;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-top: 10px;
+            border: 1px solid #ddd;
+            display: inline-block;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .info b {
+            display: inline-block;
+            width: 100px;
+        }
     </style>
 </head>
 <body>
-    <h1>Live Detection</h1>
-    <div id="image-container">
-        <img id="stream" src="" width="640">
-        <div id="boxes"></div>
+    <div class="container">
+        <h2>Stream</h2>
+        <div id="image-container">
+            <img id="stream" src="" width="640">
+            <div id="boxes"></div>
+            <div id="info-box" class="info"></div>
+        </div>
     </div>
 
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
@@ -35,30 +76,32 @@
         const socket = io();
         const image = document.getElementById("stream");
         const boxesContainer = document.getElementById("boxes");
+        const infoBox = document.getElementById("info-box");
 
         socket.on("image", data => {
-            // Показываем изображение
             image.src = "data:image/jpeg;base64," + data.image;
 
-            // Когда изображение загрузилось — отрисовываем боксы
             image.onload = () => {
                 boxesContainer.innerHTML = "";
+                infoBox.innerHTML = "";
 
+                const det = data.detections;
                 const scaleX = image.clientWidth / image.naturalWidth;
                 const scaleY = image.clientHeight / image.naturalHeight;
 
-                data.detections.forEach(det => {
-                    const box = document.createElement("div");
-                    box.className = "box";
+                const box = document.createElement("div");
+                box.className = "box";
+                box.style.left = (det.box.x * scaleX) + "px";
+                box.style.top = (det.box.y * scaleY) + "px";
+                box.style.width = (det.box.width * scaleX) + "px";
+                box.style.height = (det.box.height * scaleY) + "px";
+                boxesContainer.appendChild(box);
 
-                    box.style.left = (det.box.x * scaleX) + "px";
-                    box.style.top = (det.box.y * scaleY) + "px";
-                    box.style.width = (det.box.width * scaleX) + "px";
-                    box.style.height = (det.box.height * scaleY) + "px";
-
-                    box.innerText = `${det.class} (${Math.round(det.confidence * 100)}%)`;
-                    boxesContainer.appendChild(box);
-                });
+                infoBox.innerHTML = `
+                    <div><b>Class:</b> ${det.class}</div>
+                    <div><b>Confidence:</b> ${det.confidence.toFixed(2)}</div>
+                    <div><b>Box:</b> x: ${det.box.x}, y: ${det.box.y}, width: ${det.box.width}, height: ${det.box.height}</div>
+                `;
             };
         });
     </script>

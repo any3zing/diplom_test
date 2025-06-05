@@ -19,28 +19,30 @@ def index():
 @app.route("/upload_multipart", methods=["POST"])
 def upload_multipart():
     try:
-        if "image" not in request.files:
-            return {"error": "No image part"}, 400
-        if "detections" not in request.form:
-            return {"error": "No detections data"}, 400
+        if "image" not in request.files or "detections" not in request.form:
+            return {"error": "Missing parts"}, 400
 
         image_file = request.files["image"]
         detections_json = request.form["detections"]
-        detections = json.loads(detections_json)
+        detection = json.loads(detections_json)
 
-        # Преобразуем изображение в base64, чтобы отправить в сокет
+        timestamp = detection.get("timestamp", "")
+
         image_bytes = image_file.read()
         base64_image = base64.b64encode(image_bytes).decode("utf-8")
 
-        # Отправка изображения и детекций клиентам
+        # Отправляем объект (не массив)
         socketio.emit("image", {
             "image": base64_image,
-            "detections": detections
+            "detection": detection,
+            "timestamp": timestamp
         })
 
         return {"status": "ok"}
     except Exception as e:
         return {"error": str(e)}, 500
+
+
 
 @socketio.on("connect")
 def handle_connect():
